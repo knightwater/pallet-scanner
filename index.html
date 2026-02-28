@@ -21,7 +21,6 @@ input:focus{border-color:#38bdf8}
 .btn-danger:hover{background:#dc2626}
 .btn-warning{background:#f59e0b;color:#0f172a}
 .btn-warning:hover{background:#d97706}
-.btn-success{background:#22c55e;color:#0f172a}
 .btn-gray{background:#475569;color:#e2e8f0}
 .btn-gray:hover{background:#334155}
 .btn-sm{padding:6px 12px;font-size:.8rem}
@@ -29,6 +28,12 @@ input:focus{border-color:#38bdf8}
 .app{display:none;flex-direction:column;min-height:100vh}
 header{background:#1e293b;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}
 header h1{font-size:1.2rem;color:#38bdf8}
+.sync-status{font-size:.75rem;padding:4px 10px;border-radius:12px;font-weight:600}
+.sync-ok{background:#14532d;color:#4ade80}
+.sync-err{background:#7f1d1d;color:#f87171}
+.sync-pending{background:#78350f;color:#fbbf24}
+.header-right{display:flex;gap:8px;align-items:center}
+
 .tabs{display:flex;gap:4px;padding:12px 16px;background:#1e293b;border-bottom:1px solid #334155;flex-wrap:wrap}
 .tab{padding:8px 14px;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;color:#94a3b8;border:none;background:transparent;transition:.2s}
 .tab.active{background:#38bdf8;color:#0f172a}
@@ -78,7 +83,6 @@ tr:hover td{background:#263548}
 .filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .filter-btn{padding:5px 12px;border-radius:6px;border:1px solid #334155;background:transparent;color:#94a3b8;font-size:.8rem;cursor:pointer}
 .filter-btn.active{border-color:#38bdf8;color:#38bdf8}
-.search-inp{padding:6px 12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:.85rem;outline:none;width:200px}
 
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:200}
 .modal.open{display:flex}
@@ -90,6 +94,7 @@ tr:hover td{background:#263548}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.toast-ok{background:#14532d;color:#4ade80;border:1px solid #4ade80}
 .toast.toast-err{background:#7f1d1d;color:#f87171;border:1px solid #f87171}
+.toast.toast-warn{background:#78350f;color:#fbbf24;border:1px solid #fbbf24}
 
 .log-list{max-height:300px;overflow-y:auto}
 .log-item{padding:8px 12px;border-radius:8px;margin-bottom:6px;font-size:.85rem}
@@ -97,9 +102,13 @@ tr:hover td{background:#263548}
 .log-item.log-err{background:#7f1d1d;color:#f87171}
 .log-item.log-dup{background:#78350f;color:#fbbf24}
 .log-item.log-broken{background:#4a1942;color:#f0abfc}
+.log-item.log-delete{background:#1e1b4b;color:#a5b4fc}
 .ts{font-size:.75rem;opacity:.7;margin-left:8px}
 .hidden{display:none}
 .td-actions{display:flex;gap:4px}
+
+/* Offline queue badge */
+.queue-badge{background:#78350f;color:#fbbf24;border-radius:12px;padding:2px 8px;font-size:.75rem;font-weight:700;margin-left:6px}
 </style>
 </head>
 <body>
@@ -111,7 +120,7 @@ tr:hover td{background:#263548}
   <div class="login-box">
     <h1>🏭 Pallet Scanner</h1>
     <p>ระบบบันทึกการใช้งานพาเลท</p>
-    <input type="password" id="pwInput" placeholder="รหัสผ่าน">
+    <input type="password" id="pwInput" placeholder="รหัสผ่าน" onkeydown="if(event.key==='Enter')login()">
     <button class="btn btn-primary" onclick="login()" style="width:100%;margin-top:12px">เข้าสู่ระบบ</button>
     <p id="loginErr" style="color:#ef4444;margin-top:8px;font-size:.85rem;display:none">รหัสผ่านไม่ถูกต้อง</p>
   </div>
@@ -121,7 +130,10 @@ tr:hover td{background:#263548}
 <div class="app" id="app">
   <header>
     <h1>🏭 Pallet Scanner</h1>
-    <button class="btn btn-gray btn-sm" onclick="logout()">ออกจากระบบ</button>
+    <div class="header-right">
+      <span id="syncStatus" class="sync-status sync-ok">● Sheet OK</span>
+      <button class="btn btn-gray btn-sm" onclick="logout()">ออกจากระบบ</button>
+    </div>
   </header>
   <div class="tabs">
     <button class="tab active" onclick="switchTab('scan',this)">📷 สแกน</button>
@@ -189,9 +201,16 @@ tr:hover td{background:#263548}
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzdIiQl6D2fF0WZdgOy1SMbUgOfokuV0pVprYjBbf-gdlNq2-SLlh2NWacxXNhTtzBU/exec";
-const PASSWORD = "wms";
+// ═══════════════════════════════════════════
+//  CONFIG — เปลี่ยนตรงนี้เท่านั้น
+// ═══════════════════════════════════════════
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby3hCOEa1QmQRhIRNII1Pk3G3vFYZbbmWA0Qq3E0mMfNjPUV8wLQz4IQaU4uyoDroQY/exec";
+const PASSWORD   = "wms";
+const SHEET_USER = "WEB"; // ชื่อ user ที่จะบันทึกใน sheet
 
+// ═══════════════════════════════════════════
+//  MASTER DATA
+// ═══════════════════════════════════════════
 function genList(prefix,start,end,pad){
   let a=[];
   for(let i=start;i<=end;i++) a.push(prefix+String(i).padStart(pad,'0'));
@@ -203,296 +222,326 @@ const SETS=[
   {id:'set3',name:'ชุด 3 (CS200001-CS204400)',list:genList('CS',200001,204400,6)},
   {id:'set4',name:'ชุด 4 (PL000001-PL007400)',list:genList('PL',1,7400,6)},
 ];
+const CODE_TO_SET={};
+SETS.forEach((s,i)=>s.list.forEach(c=>CODE_TO_SET[c]=i));
+const MASTER=new Set(Object.keys(CODE_TO_SET));
 
-// Build fast lookup: code → set index
-const CODE_TO_SET = {};
-SETS.forEach((s,i) => s.list.forEach(c => CODE_TO_SET[c] = i));
-const MASTER = new Set(Object.keys(CODE_TO_SET));
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+let scanned={}, scanLog=[], offlineQueue=[];
+let currentTab='scan', html5QrCode=null, cameraOn=false, remarkTarget=null;
+let setFilters={set1:'all',set2:'all',set3:'all',set4:'all'};
+let _deleteInProgress=false;
 
-// ─── State (in-memory only — localStorage not supported here) ───
-let scanned = {}, scanLog = [], currentTab = 'scan';
-let html5QrCode = null, cameraOn = false, remarkTarget = null;
-let setFilters = {set1:'all',set2:'all',set3:'all',set4:'all'};
-
-// ─── Toast ───
-let toastTimer = null;
-function showToast(msg, type='ok'){
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast toast-'+type+' show';
-  if(toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>el.classList.remove('show'), 2500);
-}
-
-// ─── Persist ───
-function save(){
-  try{ localStorage.setItem('psc', JSON.stringify(scanned)); }catch(e){}
-}
-function saveLogs(){
-  try{ localStorage.setItem('psl', JSON.stringify(scanLog)); }catch(e){}
-}
+// ═══════════════════════════════════════════
+//  LOCAL STORAGE
+// ═══════════════════════════════════════════
+function save(){try{localStorage.setItem('psc',JSON.stringify(scanned))}catch(e){}}
+function saveLogs(){try{localStorage.setItem('psl',JSON.stringify(scanLog))}catch(e){}}
+function saveQueue(){try{localStorage.setItem('psq',JSON.stringify(offlineQueue))}catch(e){}}
 function load(){
-  try{ const d=localStorage.getItem('psc'); if(d) scanned=JSON.parse(d); }catch(e){ scanned={}; }
-  try{ const d=localStorage.getItem('psl'); if(d) scanLog=JSON.parse(d); }catch(e){ scanLog=[]; }
+  try{const d=localStorage.getItem('psc');if(d)scanned=JSON.parse(d);}catch(e){scanned={};}
+  try{const d=localStorage.getItem('psl');if(d)scanLog=JSON.parse(d);}catch(e){scanLog=[];}
+  try{const d=localStorage.getItem('psq');if(d)offlineQueue=JSON.parse(d);}catch(e){offlineQueue=[];}
 }
 
-// ─── Confirm Modal ───
-let _confirmCb = null;
-function showConfirm(msg, cb){
-  _confirmCb = cb;
-  document.getElementById('confirmMsg').textContent = msg;
-  document.getElementById('confirmModal').classList.add('open');
-  document.getElementById('confirmOkBtn').onclick = function(){ closeConfirm(); if(_confirmCb) _confirmCb(); };
+// ═══════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════
+let _toastTimer=null;
+function showToast(msg,type='ok'){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast toast-'+type+' show';
+  if(_toastTimer)clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>el.classList.remove('show'),2800);
 }
-function closeConfirm(){ document.getElementById('confirmModal').classList.remove('open'); _confirmCb=null; }
 
-// ─── Auth ───
+// ═══════════════════════════════════════════
+//  SYNC STATUS UI
+// ═══════════════════════════════════════════
+function setSyncStatus(state){
+  const el=document.getElementById('syncStatus');
+  if(state==='ok'){el.textContent='● Sheet OK';el.className='sync-status sync-ok';}
+  else if(state==='err'){el.textContent='● Sheet Error';el.className='sync-status sync-err';}
+  else{el.textContent='● Syncing…';el.className='sync-status sync-pending';}
+}
+
+// ═══════════════════════════════════════════
+//  GOOGLE SHEET — sendToSheet (พร้อม offline queue)
+// ═══════════════════════════════════════════
+async function sendToSheet(code, status, remark){
+  const payload={code, status, remark, ts:new Date().toISOString(), user:SHEET_USER};
+  setSyncStatus('pending');
+  try{
+    const fd=new FormData();
+    Object.entries(payload).forEach(([k,v])=>fd.append(k,v));
+    await fetch(SCRIPT_URL,{method:'POST',body:fd,mode:'no-cors'});
+    setSyncStatus('ok');
+    // flush offline queue ถ้ามี
+    if(offlineQueue.length>0) flushQueue();
+  }catch(e){
+    // ไม่มีเน็ต — เพิ่มเข้า queue
+    offlineQueue.push(payload);
+    saveQueue();
+    setSyncStatus('err');
+    showToast('⚠️ Offline — จะส่งข้อมูลอัตโนมัติเมื่อมีเน็ต','warn');
+  }
+}
+
+async function flushQueue(){
+  if(offlineQueue.length===0) return;
+  const q=[...offlineQueue];
+  for(const payload of q){
+    try{
+      const fd=new FormData();
+      Object.entries(payload).forEach(([k,v])=>fd.append(k,v));
+      await fetch(SCRIPT_URL,{method:'POST',body:fd,mode:'no-cors'});
+      offlineQueue.shift();
+      saveQueue();
+    }catch(e){break;}
+  }
+  if(offlineQueue.length===0){setSyncStatus('ok');showToast('✅ Sync ข้อมูล offline สำเร็จ','ok');}
+}
+
+// ตรวจ online ทุก 30s เพื่อ flush
+setInterval(()=>{if(navigator.onLine&&offlineQueue.length>0)flushQueue();},30000);
+
+// ═══════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════
 function login(){
-  if(document.getElementById('pwInput').value === PASSWORD){
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
+  if(document.getElementById('pwInput').value===PASSWORD){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='flex';
     load();
     renderAll();
-    setTimeout(()=>document.getElementById('scanInput').focus(), 100);
+    if(offlineQueue.length>0) flushQueue();
+    setTimeout(()=>document.getElementById('scanInput').focus(),100);
   } else {
-    document.getElementById('loginErr').style.display = 'block';
+    document.getElementById('loginErr').style.display='block';
   }
 }
 function logout(){
-  document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('app').style.display='none';
   stopCamera();
 }
-document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
+document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 
-// ─── Tabs ───
-function switchTab(name, el){
+// ═══════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════
+function switchTab(name,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('[id^="tab-"]').forEach(t=>t.classList.add('hidden'));
   document.getElementById('tab-'+name).classList.remove('hidden');
-  currentTab = name;
-  if(name === 'summary') renderSummary();
-  const m = name.match(/^set(\d)$/);
+  currentTab=name;
+  if(name==='summary') renderSummary();
+  const m=name.match(/^set(\d)$/);
   if(m) renderSetTab(m[1]);
-  if(name === 'log') renderLog();
-  if(name !== 'scan') stopCamera();
+  if(name==='log') renderLog();
+  if(name!=='scan') stopCamera();
 }
 
-// ─── Scan ───
+// ═══════════════════════════════════════════
+//  CONFIRM MODAL
+// ═══════════════════════════════════════════
+let _confirmCb=null;
+function showConfirm(msg,cb){
+  _confirmCb=cb;
+  document.getElementById('confirmMsg').textContent=msg;
+  document.getElementById('confirmModal').classList.add('open');
+  document.getElementById('confirmOkBtn').onclick=()=>{closeConfirm();if(_confirmCb)_confirmCb();};
+}
+function closeConfirm(){document.getElementById('confirmModal').classList.remove('open');_confirmCb=null;}
+
+// ═══════════════════════════════════════════
+//  SCAN
+// ═══════════════════════════════════════════
 function processScan(code){
-  const inp = document.getElementById('scanInput');
-  const val = (code || inp.value).trim().toUpperCase();
+  const inp=document.getElementById('scanInput');
+  const val=(code||inp.value).trim().toUpperCase();
   if(!val) return;
-  inp.value = '';
-  inp.focus();
+  inp.value=''; inp.focus();
 
   if(!MASTER.has(val)){
-    showResult('err','❌ ไม่พบ '+val+' ใน Master List — ไม่บันทึก');
+    showResult('err','❌ ไม่พบ '+val+' ใน Master List');
     addLog(val,'err','ไม่อยู่ใน Master List');
     sendToSheet(val,'ERROR','ไม่อยู่ใน Master List');
     return;
   }
-  if(scanned[val] && !scanned[val].broken){
+  if(scanned[val]&&!scanned[val].broken){
     showResult('dup','⚠️ '+val+' — scan เข้าใช้งานแล้ว (ซ้ำ)');
     addLog(val,'dup','scan ซ้ำ');
     renderRecent();
     return;
   }
-  scanned[val] = {ts:new Date().toISOString(), broken:false, remark:''};
+  scanned[val]={ts:new Date().toISOString(),broken:false,remark:''};
   save();
-  showResult('ok','✅ '+val+' — scan เข้าใช้งานแล้ว');
+  showResult('ok','✅ '+val+' — บันทึกแล้ว');
   addLog(val,'ok','scan เข้าใช้งานแล้ว');
-  sendToSheet(val,'USED','');
+  sendToSheet(val,'USED','');   // → Sheet: Scans log + Scanned upsert
   renderRecent();
 }
 
-let resultTimer = null;
-function showResult(type, msg){
-  const el = document.getElementById('scanResult');
-  el.className = 'scan-result '+type;
-  el.textContent = msg;
-  if(resultTimer) clearTimeout(resultTimer);
-  resultTimer = setTimeout(()=>{ el.style.display='none'; el.className='scan-result'; }, 3000);
+let _resTimer=null;
+function showResult(type,msg){
+  const el=document.getElementById('scanResult');
+  el.className='scan-result '+type; el.textContent=msg;
+  if(_resTimer)clearTimeout(_resTimer);
+  _resTimer=setTimeout(()=>{el.style.display='none';el.className='scan-result';},3000);
 }
-document.getElementById('scanInput').addEventListener('keydown', e=>{ if(e.key==='Enter') processScan(); });
+document.getElementById('scanInput').addEventListener('keydown',e=>{if(e.key==='Enter')processScan();});
 
-// ─── Camera ───
-function toggleCamera(){ cameraOn ? stopCamera() : startCamera(); }
+// ═══════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════
+function toggleCamera(){cameraOn?stopCamera():startCamera();}
 function startCamera(){
-  const el = document.getElementById('qr-reader');
+  const el=document.getElementById('qr-reader');
   el.classList.remove('hidden');
-  html5QrCode = new Html5Qrcode("qr-reader");
+  html5QrCode=new Html5Qrcode("qr-reader");
   html5QrCode.start({facingMode:"environment"},{fps:10,qrbox:250},
-    code=>{ processScan(code); },()=>{}
+    code=>{processScan(code);},()=>{}
   ).then(()=>cameraOn=true).catch(()=>el.classList.add('hidden'));
 }
 function stopCamera(){
-  if(html5QrCode && cameraOn){
-    html5QrCode.stop().then(()=>{ html5QrCode=null; cameraOn=false; document.getElementById('qr-reader').classList.add('hidden'); }).catch(()=>{});
+  if(html5QrCode&&cameraOn){
+    html5QrCode.stop().then(()=>{html5QrCode=null;cameraOn=false;document.getElementById('qr-reader').classList.add('hidden');}).catch(()=>{});
   }
 }
 
-// ─── DELETE (Fixed) ───
-// เก็บ pending delete เพื่อป้องกัน double-call
-let _deleteInProgress = false;
-
-function deleteScan(code, setId){
+// ═══════════════════════════════════════════
+//  DELETE — ส่ง DELETED event ไป Sheet ด้วย
+// ═══════════════════════════════════════════
+function deleteScan(code,setId){
   if(_deleteInProgress) return;
-  showConfirm('ลบข้อมูล scan ของ '+code+' ?', ()=>{
-    _deleteInProgress = true;
-
-    // 1. ลบออกจาก state แล้ว force-save ทันที
+  showConfirm('ลบข้อมูล scan ของ '+code+' ?',()=>{
+    _deleteInProgress=true;
     delete scanned[code];
-    save();  // บันทึกลง localStorage
-
-    // ตรวจสอบว่าลบออกจริงหรือเปล่า (sanity check)
-    if(scanned[code]){
-      showToast('⚠️ ลบไม่สำเร็จ กรุณาลองใหม่','err');
-      _deleteInProgress = false;
-      return;
-    }
-
-    // 2. Log การลบ
-    addLog(code,'err','ลบข้อมูลออก');
-
-    // 3. Re-render ทุก panel ที่เกี่ยวข้อง
-    renderRecent();
-
-    const n = setId.replace('set','');
-    renderSetTab(n);   // render set tab ที่ code นั้นสังกัด
-
-    if(currentTab === 'summary') renderSummary();
-    if(currentTab === 'log') renderLog();
-
-    // 4. ถ้า currentTab ต่างจาก set ที่ลบ ให้ render currentTab ด้วย
-    const curMatch = currentTab.match(/^set(\d)$/);
-    if(curMatch && 'set'+curMatch[1] !== setId) renderSetTab(curMatch[1]);
-
+    save();
+    if(scanned[code]){showToast('⚠️ ลบไม่สำเร็จ','err');_deleteInProgress=false;return;}
+    addLog(code,'delete','ลบข้อมูลออก');
+    // ส่งไป Google Sheet sheet "Scans" ด้วย status=DELETED
+    // และ Apps Script จะลบออกจาก Scanned sheet ด้วย
+    sendToSheet(code,'DELETED','');
     showToast('🗑️ ลบ '+code+' เรียบร้อย','ok');
-    _deleteInProgress = false;
+    renderRecent();
+    const n=setId.replace('set','');
+    renderSetTab(n);
+    if(currentTab==='summary') renderSummary();
+    const cur=currentTab.match(/^set(\d)$/);
+    if(cur&&'set'+cur[1]!==setId) renderSetTab(cur[1]);
+    _deleteInProgress=false;
   });
 }
 
-// ─── Remark / Broken ───
+// ═══════════════════════════════════════════
+//  REMARK / BROKEN
+// ═══════════════════════════════════════════
 function openRemark(code){
-  remarkTarget = code;
-  document.getElementById('remarkCode').textContent = code;
-  document.getElementById('remarkText').value = scanned[code]?.remark || '';
+  remarkTarget=code;
+  document.getElementById('remarkCode').textContent=code;
+  document.getElementById('remarkText').value=scanned[code]?.remark||'';
   document.getElementById('remarkModal').classList.add('open');
 }
-function closeRemark(){ document.getElementById('remarkModal').classList.remove('open'); }
+function closeRemark(){document.getElementById('remarkModal').classList.remove('open');}
 function confirmRemark(){
-  const txt = document.getElementById('remarkText').value.trim();
-  if(!scanned[remarkTarget]) scanned[remarkTarget] = {ts:new Date().toISOString()};
-  scanned[remarkTarget].broken = true;
-  scanned[remarkTarget].remark = txt;
+  const txt=document.getElementById('remarkText').value.trim();
+  if(!scanned[remarkTarget]) scanned[remarkTarget]={ts:new Date().toISOString()};
+  scanned[remarkTarget].broken=true;
+  scanned[remarkTarget].remark=txt;
   save();
   addLog(remarkTarget,'broken','ชำรุด: '+txt);
-  sendToSheet(remarkTarget,'BROKEN',txt);
+  sendToSheet(remarkTarget,'BROKEN',txt); // → Sheet: Scans log + Damaged + update Scanned
   showToast('🔴 บันทึกชำรุด '+remarkTarget+' แล้ว','ok');
   closeRemark();
   renderAll();
 }
 
-// ─── Log ───
-function addLog(code, type, msg){
-  scanLog.unshift({code, type, msg, ts:new Date().toISOString()});
+// ═══════════════════════════════════════════
+//  LOG
+// ═══════════════════════════════════════════
+function addLog(code,type,msg){
+  scanLog.unshift({code,type,msg,ts:new Date().toISOString()});
   saveLogs();
 }
 function fmtTs(ts){
-  const d = new Date(ts);
+  const d=new Date(ts);
   return d.toLocaleDateString('th-TH')+' '+d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
 }
 
-// ─── Render ───
+// ═══════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════
 function renderAll(){
   renderRecent();
-  if(currentTab === 'summary') renderSummary();
-  const m = currentTab.match(/^set(\d)$/);
+  if(currentTab==='summary') renderSummary();
+  const m=currentTab.match(/^set(\d)$/);
   if(m) renderSetTab(m[1]);
-  if(currentTab === 'log') renderLog();
+  if(currentTab==='log') renderLog();
 }
-
 function renderRecent(){
-  const el = document.getElementById('recentScans');
-  el.innerHTML = scanLog.slice(0,10).map(l=>
-    `<div class="log-item log-${l.type}">${l.code} — ${l.msg}<span class="ts">${fmtTs(l.ts)}</span></div>`
-  ).join('') || '<p style="color:#475569;font-size:.85rem">ยังไม่มีการสแกน</p>';
+  const el=document.getElementById('recentScans');
+  el.innerHTML=scanLog.slice(0,10).map(l=>`<div class="log-item log-${l.type}">${l.code} — ${l.msg}<span class="ts">${fmtTs(l.ts)}</span></div>`).join('')||'<p style="color:#475569;font-size:.85rem">ยังไม่มีการสแกน</p>';
 }
-
 function renderLog(){
-  const el = document.getElementById('logList');
-  el.innerHTML = scanLog.map(l=>
-    `<div class="log-item log-${l.type}">${l.code} — ${l.msg}<span class="ts">${fmtTs(l.ts)}</span></div>`
-  ).join('') || '<p style="color:#475569">ไม่มีข้อมูล</p>';
+  const el=document.getElementById('logList');
+  el.innerHTML=scanLog.map(l=>`<div class="log-item log-${l.type}">${l.code} — ${l.msg}<span class="ts">${fmtTs(l.ts)}</span></div>`).join('')||'<p style="color:#475569">ไม่มีข้อมูล</p>';
 }
-
 function getStats(list){
-  let used=0, broken=0, unused=0;
-  list.forEach(c=>{
-    if(scanned[c]?.broken) broken++;
-    else if(scanned[c]) used++;
-    else unused++;
-  });
-  return {total:list.length, used, broken, unused};
+  let used=0,broken=0,unused=0;
+  list.forEach(c=>{if(scanned[c]?.broken)broken++;else if(scanned[c])used++;else unused++;});
+  return {total:list.length,used,broken,unused};
 }
-
 function renderSummary(){
-  let aU=0, aB=0, aN=0;
-  SETS.forEach(s=>{ const st=getStats(s.list); aU+=st.used; aB+=st.broken; aN+=st.unused; });
-  const el = document.getElementById('tab-summary');
-  el.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card blue"><div class="num">${MASTER.size.toLocaleString()}</div><div class="lbl">พาเลททั้งหมด</div></div>
-      <div class="stat-card green"><div class="num">${aU.toLocaleString()}</div><div class="lbl">scan เข้าใช้งานแล้ว</div></div>
-      <div class="stat-card gray"><div class="num">${aN.toLocaleString()}</div><div class="lbl">ยังไม่ได้ scan นำมาใช้งาน</div></div>
-      <div class="stat-card red"><div class="num">${aB.toLocaleString()}</div><div class="lbl">พาเลทชำรุด</div></div>
-    </div>
-    <div id="summaryDetails">${SETS.map(s=>{
-      const st=getStats(s.list);
-      return `<div class="set-section"><h3>${s.name}</h3><div class="set-stats">
-        <span class="badge badge-total">ทั้งหมด ${st.total.toLocaleString()}</span>
-        <span class="badge badge-used">scan ใช้งานแล้ว ${st.used.toLocaleString()}</span>
-        <span class="badge badge-unused">ยังไม่ได้ scan ${st.unused.toLocaleString()}</span>
-        <span class="badge badge-broken">ชำรุด ${st.broken.toLocaleString()}</span>
-      </div></div>`;
-    }).join('')}</div>`;
+  let aU=0,aB=0,aN=0;
+  SETS.forEach(s=>{const st=getStats(s.list);aU+=st.used;aB+=st.broken;aN+=st.unused;});
+  const el=document.getElementById('tab-summary');
+  el.innerHTML=`<div class="stats-grid">
+    <div class="stat-card blue"><div class="num">${MASTER.size.toLocaleString()}</div><div class="lbl">พาเลททั้งหมด</div></div>
+    <div class="stat-card green"><div class="num">${aU.toLocaleString()}</div><div class="lbl">scan เข้าใช้งานแล้ว</div></div>
+    <div class="stat-card gray"><div class="num">${aN.toLocaleString()}</div><div class="lbl">ยังไม่ได้ scan นำมาใช้งาน</div></div>
+    <div class="stat-card red"><div class="num">${aB.toLocaleString()}</div><div class="lbl">พาเลทชำรุด</div></div>
+  </div>
+  <div>${SETS.map(s=>{const st=getStats(s.list);
+    return `<div class="set-section"><h3>${s.name}</h3><div class="set-stats">
+      <span class="badge badge-total">ทั้งหมด ${st.total.toLocaleString()}</span>
+      <span class="badge badge-used">scan ใช้งานแล้ว ${st.used.toLocaleString()}</span>
+      <span class="badge badge-unused">ยังไม่ได้ scan ${st.unused.toLocaleString()}</span>
+      <span class="badge badge-broken">ชำรุด ${st.broken.toLocaleString()}</span>
+    </div></div>`;
+  }).join('')}</div>`;
 }
-
 function renderSetTab(n){
-  const idx = parseInt(n)-1;
-  const s = SETS[idx];
-  const el = document.getElementById('tab-set'+n);
-  const filter = setFilters['set'+n] || 'all';
-  const st = getStats(s.list);
+  const idx=parseInt(n)-1;
+  const s=SETS[idx];
+  const el=document.getElementById('tab-set'+n);
+  const filter=setFilters['set'+n]||'all';
+  const st=getStats(s.list);
+  let rows=s.list;
+  if(filter==='used')   rows=rows.filter(c=>scanned[c]&&!scanned[c].broken);
+  else if(filter==='unused') rows=rows.filter(c=>!scanned[c]);
+  else if(filter==='broken') rows=rows.filter(c=>scanned[c]?.broken);
 
-  // กรอง list ตาม filter
-  let rows = s.list;
-  if(filter==='used')   rows = rows.filter(c=> scanned[c] && !scanned[c].broken);
-  else if(filter==='unused') rows = rows.filter(c=> !scanned[c]);
-  else if(filter==='broken') rows = rows.filter(c=> scanned[c]?.broken);
-
-  // สร้าง rows HTML ก่อน แล้ว set innerHTML ครั้งเดียว (ป้องกัน partial render)
-  const tableRows = rows.slice(0,500).map(c=>{
-    const d = scanned[c];
-    // ตรวจสอบ state ล่าสุดจาก scanned object โดยตรง
-    const broken = d?.broken === true;
-    const used   = d && !broken;
+  const tableRows=rows.slice(0,500).map(c=>{
+    const d=scanned[c];
+    const broken=d?.broken===true, used=d&&!broken;
     return `<tr>
       <td style="font-family:monospace;font-weight:600">${c}</td>
       <td><span class="status-badge ${broken?'s-broken':used?'s-used':'s-unused'}">${broken?'ชำรุด':used?'scan เข้าใช้งานแล้ว':'ยังไม่ได้ scan นำมาใช้งาน'}</span></td>
-      <td style="font-size:.78rem;color:#94a3b8">${d?.ts ? fmtTs(d.ts) : '-'}</td>
+      <td style="font-size:.78rem;color:#94a3b8">${d?.ts?fmtTs(d.ts):'-'}</td>
       <td style="font-size:.78rem;color:#f87171">${d?.remark||'-'}</td>
       <td><div class="td-actions">
         <button class="btn btn-warning btn-sm" onclick="openRemark('${c}')">🔴 ชำรุด</button>
-        ${d ? `<button class="btn btn-danger btn-sm" onclick="deleteScan('${c}','${s.id}')">🗑️ ลบ</button>` : ''}
+        ${d?`<button class="btn btn-danger btn-sm" onclick="deleteScan('${c}','${s.id}')">🗑️ ลบ</button>`:''}
       </div></td>
     </tr>`;
   }).join('');
 
-  // เขียน innerHTML ทั้งหมดพร้อมกันครั้งเดียว
-  el.innerHTML = `<div class="set-section">
+  el.innerHTML=`<div class="set-section">
     <h3>${s.name}</h3>
     <div class="set-stats">
       <span class="badge badge-total">ทั้งหมด ${st.total.toLocaleString()}</span>
@@ -513,42 +562,33 @@ function renderSetTab(n){
     <table>
       <tr><th>หมายเลขพาเลท</th><th>สถานะ</th><th>เวลา scan</th><th>หมายเหตุ</th><th>Action</th></tr>
       ${tableRows}
-      ${rows.length>500 ? `<tr><td colspan="5" style="text-align:center;color:#94a3b8">แสดง 500 รายการแรก (ทั้งหมด ${rows.length})</td></tr>` : ''}
+      ${rows.length>500?`<tr><td colspan="5" style="text-align:center;color:#94a3b8">แสดง 500 รายการแรก (ทั้งหมด ${rows.length})</td></tr>`:''}
     </table></div>
   </div>`;
 }
+function setFilter(n,f){setFilters['set'+n]=f;renderSetTab(n);}
 
-function setFilter(n, f){ setFilters['set'+n]=f; renderSetTab(n); }
-
-// ─── Export ───
+// ═══════════════════════════════════════════
+//  EXPORT CSV
+// ═══════════════════════════════════════════
 function exportCSV(type){
-  let rows=[], fn='';
+  let rows=[],fn='';
   if(type==='log'){
-    rows=[['Code','Type','Message','Timestamp'], ...scanLog.map(l=>[l.code,l.type,l.msg,l.ts])];
+    rows=[['Code','Type','Message','Timestamp'],...scanLog.map(l=>[l.code,l.type,l.msg,l.ts])];
     fn='scan_log.csv';
   } else {
-    const idx = parseInt(type.replace('set',''))-1;
-    const s = SETS[idx];
-    rows=[['Code','Status','Timestamp','Remark'], ...s.list.map(c=>{
-      const d = scanned[c];
-      return [c, d?.broken?'BROKEN':d?'USED':'UNUSED', d?.ts||'', d?.remark||''];
+    const idx=parseInt(type.replace('set',''))-1;
+    const s=SETS[idx];
+    rows=[['Code','Status','Timestamp','Remark'],...s.list.map(c=>{
+      const d=scanned[c];
+      return [c,d?.broken?'BROKEN':d?'USED':'UNUSED',d?.ts||'',d?.remark||''];
     })];
-    fn = s.id+'_export.csv';
+    fn=s.id+'_export.csv';
   }
-  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
-  a.download = fn; a.click();
-}
-
-// ─── Sheet ───
-async function sendToSheet(code, status, remark){
-  try{
-    const data = new FormData();
-    data.append('code',code); data.append('status',status);
-    data.append('remark',remark); data.append('ts',new Date().toISOString());
-    await fetch(SCRIPT_URL,{method:'POST',body:data,mode:'no-cors'});
-  }catch(e){}
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download=fn;a.click();
 }
 </script>
 </body>
